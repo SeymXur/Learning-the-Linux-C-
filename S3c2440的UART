@@ -1,0 +1,73 @@
+UART 有三根数据线 TXD RXD交叉相连，且共地
+
+使用串口时 需要注意的：1、波特率；2、格式（数据位、停止位、校验位、流量控制开关）；
+   Bund rate 波特率：每一位占据的时间
+   Data Bits 数据位：数据 从低到高排血 115200,8n1 每1bit数据 需要10位 所以每1byte数据 需要 10/115200
+   校验位：奇偶校验，加上校验位以后 高电平的个数应该满足奇数个或者偶数个
+   停止位：双方可约定 停止位占据的时长
+   
+数据发送过程：数据通过PBUS - Transmit Buffer - Transmit Shifter Register - TXDn
+数据接受过程：外部数据 - Receive Buffer Register - Receive Shifter -RXDn
+ 
+#define     GPHCON             __REG(0x56000070)  //Port H control                                   
+#define     GPHDAT             __REG(0x56000074)  //Port H data     
+#define     GPGUP              __REG(0x56000068)  //Pull-up control G  
+#define     ULCON0             __REG(0x50000000)  //UART 0 line control  
+#define     UCON0              __REG(0x50000004)  //UART 0 control     
+#define     UTXH0                    __REG_BYTE(0x50000020)  //UART 0 transmission hold 
+#define     URXH0                    __REG_BYTE(0x50000024)  //UART 0 receive buffer  
+// 串口初始化  
+void uart0_init()
+{
+	/* 设置引脚用于串口 */
+	/* GPH2,3用于TxD0, RxD0 */
+	GPHCON &= ~((3<<4) | (3<<6)); 	//先清掉
+	GPHCON |= ((2<<4) | (2<<6)); 	//在设置为TXD RXD
+  
+	GPHUP &= ~((1<<2) | (1<<3));  /* 清0 使能内部上拉 */
+
+	/* 设置波特率 */
+	/* UBRDIVn = (int)( UART clock / ( buad rate x 16) ) –1
+	 *  通过UCON0 = 5 设置使用PCLK
+	 *  UART clock = 50M
+	 *  UBRDIVn = (int)( 50000000 / ( 115200 x 16) ) –1 = 26
+	 */
+	UCON0 = 0x00000005; /* PCLK 慢速时钟,中断/查询模式 Tmode$Rmode 0101 */
+	UBRDIV0 = 26;
+
+	/* 设置数据格式 */
+	ULCON0 = 0x00000003; /* 8n1: 8个数据位, 无较验位, 1个停止位 */
+
+}
+
+int putchar(int c)
+{
+	/* UTRSTAT0 
+   *  [0] Receive buffer data ready 0 = Empty ;     1 = The buffer register has a received data;                当1时需要将数据取走
+   *  [2] Transmitter empty         0 = Not empty ; 1 = Transmitter (transmit buffer & shifter register) empty  当1时说明可以发送下一组数据
+   */
+	/* UTXH0 */
+	while (!(UTRSTAT0 & (1<<2)));
+	//transmitter empty = 1时,表示Transmitter empty
+	UTXH0 = (unsigned char)c;
+	
+}
+
+int getchar(void)
+{
+	while (!(UTRSTAT0 & (1<<0)));
+	//receive buffer data ready = 1时，表示接收到数据 将会执行下一步
+	return URXH0;
+}
+
+int puts(const char *s)
+{
+	while (*s)       //当s中有内容就可以循环发送
+	{
+		putchar(*s);
+		s++;
+	}
+}
+
+
+
