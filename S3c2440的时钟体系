@@ -1,0 +1,60 @@
+2440的内部时钟源是一个12M的晶振
+但 Fclk 最大可以到 400Mhz
+   Hclk 最大可以到 136Mhz
+   Pclk 最大可以到 68Mhz 其中的原因在于 PLL(锁相环)
+
+2440的时钟源有两个通过OM[3:2],来选择使用内部晶振还是外部晶振
+    选定时钟源只有 通过MPLL（main PLL） 和 UPLL（USB PLL） 来控制输出的频率
+    
+    晶振通过MPLL 输出为Fclk 提供给CPU使用
+    Fclk 通过HDIVN 输出Hclk 给高速设备使用 AHB总线 NandFC、MemoryC、InterC...
+    Fclk 通过PDIVN 输出Pclk 给低速设备使用 APB总线 WDT、IIS、IIC、GPIO、RTC...
+    
+    晶振通过UPLL 输出为Uclk 供给USB使用 
+   
+上电顺序
+    1、nRESET 维持一段时间的低电平，待系统稳定，随后输出高电平
+    2、根据OM[3:2] FCLK=晶振频率
+    3、PLL将OM[3:2]的值锁存进来，同时CPU开始运行
+    4、设置PLL，进入Lock Time，CPU停止
+    5、在Lock Time中 PLL开始工作
+    6、Lock Time结束 PLL输出稳定 CPU中Fclk=PLL输出的新时钟新频率
+    
+Code：
+  /* 设置MPLL, FCLK : HCLK : PCLK = 400Mhz : 100Mhz : 50Mhz */
+	/* LOCKTIME(0x4C000000) = 0xFFFFFFFF */
+	//Reset value = 0xFFFFFFFF 
+	ldr r0, = 0x4C000000
+	ldr r1, = 0xFFFFFFFF
+	str r1, [r0]
+
+	/* CLKDIVN(0x4C000014) = 0X5, tFCLK:tHCLK:tPCLK = 1:4:8  */
+	ldr r0, =0x4C000014
+	ldr r1, =0x5
+	str r1, [r0]
+
+	/* 设置CPU工作于异步模式 */
+	mrc p15,0,r0,c1,c0,0
+	orr r0,r0,#0xc0000000   //R1_nF:OR:R1_iA
+	mcr p15,0,r0,c1,c0,0
+
+	/* 设置MPLLCON(0x4C000004) = (92<<12)|(1<<4)|(1<<0) 
+	 *  m = MDIV+8 = 92+8=100
+	 *  p = PDIV+2 = 1+2 = 3
+	 *  s = SDIV = 1
+	 *  FCLK = 2*m*Fin/(p*2^s) = 2*100*12/(3*2^1)=400M
+	 */
+	ldr r0, =0x4C000004
+	ldr r1, =(92<<12)|(1<<4)|(1<<0)
+	str r1, [r0]
+
+	/* 一旦设置PLL, 就会锁定lock time直到PLL输出稳定
+	 * 然后CPU工作于新的频率FCLK
+	 */
+   
+   
+   
+   
+PLL：内容待整理
+  为什么1/1 也要用锁相环
+  为什么锁相环能够提高时钟频率
